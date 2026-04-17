@@ -38,8 +38,5 @@ function greek_sensitivity(lambda)
 end
 
 lambda_values = 0.0:0.01:1
-sensitivities = [greek_sensitivity(lambda) for lambda in lambda_values]
-plot(lambda_values, sensitivities, xlabel="Lambda", ylabel="Sensitivity", title="Sensitivity of Merton Price to Lambda", legend=false)
-# savefig("MertonSensitivity.png")
-
+sensitivities_true = [greek_sensitivity(lambda) for lambda in lambda_values]
 
