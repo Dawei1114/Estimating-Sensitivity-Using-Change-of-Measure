@@ -16,10 +16,11 @@ function MertonSensitivitySim(nsim,r,g, S0, sigma, lambda0, lambda, T, kappa)
     return mean(res)
 end
 
-lambda_values = 0.0:0.1:1
 function g(x)
     return max.(x .- 100, 0)
 end
+
+lambda_values = 0.0:0.1:1
 
 lambda0vec = 0.1:0.0001:1
 sensitivities_sim = zeros(length(lambda_values))
