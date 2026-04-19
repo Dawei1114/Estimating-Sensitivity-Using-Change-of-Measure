@@ -6,13 +6,17 @@ function BlackScholes(S, K, T, r, σ)
     return call_price
 end
 
-function MertonPrice(S, K, T, r, sigma, lambda, kappa, gamma, delta, tol = 1e-6)
+function SumTerms(S, K, T, r, sigma, lambda, kappa, delta, tol = 1e-6)
     old = 0.0
     new = 0.0
     n = 0
+    gamma = log(1+kappa)
     lambdaprime = lambda *(1+kappa)
+    function Poisson(lambda, n)
+        return exp(-lambda) * lambda^n / factorial(n)
+    end
     while true
-        new = ((lambdaprime * T)^n * exp(-lambdaprime * T) / factorial(n)) * BlackScholes(S, K, T, r - lambda * kappa + n * gamma /T, sigma ^ 2 + n * delta ^ 2/T)
+        new = old + ForwardDiff.derivative(lambda -> Poisson(lambdaprime, n) * BlackScholes(S, K, T, r - lambda * kappa + n * gamma /T, sqrt(sigma^2 + n * delta^2 / T)), lambda)
         if abs(new - old) < tol
             break
         end
@@ -29,14 +33,11 @@ function greek_sensitivity(lambda)
     r = 0.05
     sigma = 0.2
     kappa = 0.1
-    gamma = 0.05
     delta = 0.1
-    function price(lambda)
-        return MertonPrice(S, K, T, r, sigma, lambda, kappa, gamma, delta)
-    end
-    return ForwardDiff.derivative(price, lambda)
+    return SumTerms(S, K, T, r, sigma, lambda, kappa, delta)
 end
 
-lambda_values = 0.0:0.01:1
+lambda_values = 0.0:0.1:1
 sensitivities_true = [greek_sensitivity(lambda) for lambda in lambda_values]
+println("The sensitivities, under the true model, are: ", sensitivities_true)
 
