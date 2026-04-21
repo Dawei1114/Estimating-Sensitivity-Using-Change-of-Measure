@@ -11,10 +11,10 @@ function MertonSensitivitySim(nsim,r,g, S0, sigma, lambda0, lambda, T, kappa, de
     sumterms = zeros(nsim)
     for i in eachindex(sumterms)
         if N[i] == 0
-            sumterms[i] = g(S0 * exp((r - 0.5 * sigma ^ 2 - lambda * kappa) * T + sigma * sqrt(T) * eps[i])) * ForwardDiff.derivative(x -> RadonNikodym(lambda0, x, N[i]), lambda)
+            sumterms[i] = ForwardDiff.derivative(x -> g(S0 * exp((r - 0.5 * sigma ^ 2 - x * kappa) * T + sigma * sqrt(T) * eps[i])) *  RadonNikodym(lambda0, x, N[i]), lambda)
         else
             Yi = rand(LogNormal(0, delta), N[i])
-            sumterms[i] = g(S0 * exp((r - 0.5 * sigma ^ 2 - lambda * kappa) * T + sigma * sqrt(T) * eps[i]) * prod(Yi)) * ForwardDiff.derivative(x -> RadonNikodym(lambda0, x, N[i]), lambda)
+            sumterms[i] = ForwardDiff.derivative(x -> g(S0 * exp((r - 0.5 * sigma ^ 2 - x * kappa) * T + sigma * sqrt(T) * eps[i]) * prod(Yi)) * RadonNikodym(lambda0, x, N[i]), lambda)
         end
     end
     return mean(sumterms)
