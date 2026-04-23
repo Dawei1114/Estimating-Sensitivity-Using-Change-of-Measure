@@ -66,7 +66,8 @@ function sim_price(model::MertonModel, option::OptionContract, λ₀::Real, nsim
             payoffs[i] = exp(- model.r * model.T) * radon_nikodym(λ₀ * model.T, model.λ * model.T, N[i]) * option(model.S * exp((model.r - 0.5 * model.σ^2) * model.T + model.σ * sqrt(model.T) * eps[i]))
         else
             # Yi = log.(randn(1,model.exp(model.δ^2)))
-            Yi = rand(LogNormal(0, model.δ), N[i]) # Are you sure about this line? Try uncommenting the following:
+            # Yi = rand(LogNormal(0, model.δ), N[i]) # Are you sure about this line? Try uncommenting the following:
+            Yi = rand(LogNormal(-model.δ^2/2, model.δ), N[i]) # This is the correct way to sample from a lognormal distribution with mean 1. The mean of a lognormal distribution with parameters (μ, σ) is exp(μ + σ^2/2). So if you want the mean to be 1, you need to set μ = -σ^2/2. Note that this is a common mistake when working with lognormal distributions, so it's worth double-checking your code to make sure you're sampling from the correct distribution.
             # Y_test = rand(LogNormal(0, model.δ), 1_000_000); println("Empirical mean of Y: $(mean(Y_test)) ($(std(Y_test)/sqrt(1_000_000))). Theoretical mean of Y: 1. Empirical variance of Y: $(var(log.(Y_test))). Theoretical variance of log(Y): $(model.δ^2)."); error()
             # Do you see how the empirical mean is too high? Note that you hav parametrized the lognormal distribution with a log-mean of 0, while the actual mean should be 1. Note that by Jensen's inequality, these are different things. If you want to allow for jumps with a different mean, you will need to make a few changes in the code, but I've deliberately removed everything related to that for now to keep things as simple as possible.
             payoffs[i] = exp(- model.r * model.T) * radon_nikodym(λ₀ * model.T, model.λ * model.T, N[i]) * option(model.S * exp((model.r - 0.5 * model.σ^2) * model.T + model.σ * sqrt(model.T) * eps[i]) * prod(Yi))
