@@ -1,4 +1,5 @@
 # Jumps are Poisson at specific timepoints
+
 using Distributions
 function MJD_FixedJumps(S0, mu, T, sigma, lambda, dt, Ydist)
     timepoints = 0:dt:T
@@ -53,7 +54,7 @@ end
 function simulate_option_payoff(nsims, style, S0, K, mu, T, sigma, lambda, dt, Ydist)
     payoffs = zeros(nsims)
     for i in eachindex(payoffs)
-        stockprice = MJD_FixedJumps(S0, K, mu, T, sigma, lambda, dt, Ydist)
+        stockprice = MJD_FixedJumps(S0, mu, T, sigma, lambda, dt, Ydist)
         if style == "call"
             payoffs[i] = eu_call_payoff(stockprice[end], K)
         elseif style == "put"
@@ -65,6 +66,11 @@ function simulate_option_payoff(nsims, style, S0, K, mu, T, sigma, lambda, dt, Y
     return mean(payoffs)
 end
 
-simulate_option_payoff(10000, "digital_call", 100, 100, 0.05, 1.0, 0.2, 0.1, 0.01, LogNormal(0.0, 0.1))
+k = 0
+delta = 0.1
+muX = 1+k
+mu = log(muX^2/(sqrt(muX^2 + delta^2)))
+sig = log(1 + delta^2/muX^2)
+simulate_option_payoff(10000, "digital_call", 100, 100, 0.05, 1.0, 0.2, 0.1, 0.01, LogNormal(mu, sig))
 
 
