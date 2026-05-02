@@ -1,3 +1,4 @@
+using Pkg; Pkg.activate("DaweiVibrato"); using Revise
 using Distributions, Plots, LinearAlgebra, Random
 
 struct MertonModel{T,U,V,W,X,Z}
@@ -40,7 +41,7 @@ function Vibrato(model::MertonModel, option::OptionContract, Ydist, nsims::Int, 
     Random.seed!(42) # for reproducibility
     Δ= model.dt
     θ = rand(nsims)
-    X = Matrix{Float64}(undef,nsims, p + 2)
+    X = Matrix{Float64}(undef,nsims, p + 2) # design matrix
     y = Vector{Float64}(undef, nsims) # payoffs
     for i in eachindex(θ)
         stocks = MJD_FixedJumps(MertonModel(model.S0, model.T, model.μ, model.σ, θ[i], Δ), Ydist)
@@ -75,8 +76,4 @@ for i in eachindex(bhat)
     println("bhat[$i]: $(bhat[i]), SE: $(SE[i]), tstat: $(tstats[i])")
 end
 
-
-
 # Estimated E(f(S_T)) = bhat[1] + bhat[2] * S_T_Δ + bhat[3] * S_T_Δ^2 + bhat[4] * θ
-
-
