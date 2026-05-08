@@ -42,7 +42,7 @@ function price(model::MertonModel, option::OptionContract; tol = 1e-6)
     return sum_so_far
 end
 
-radon_nikodym(lambda0, lambda, N) = exp(lambda0 - lambda) * (lambda / lambda0)^N
+radon_nikodym(lambda0, lambda, N) = exp(lambda0 - lambda) * (lambda / lambda0) .^ N
 
 function test_RN(nsim::Int) # Check that the Radon-Nikodym derivative is correctly implemented by verifying that its mean is close to 1 under the original measure for various λ values. 
     Random.seed!(42) # for reproducibility
@@ -72,6 +72,19 @@ function sim_price(model::MertonModel, option::OptionContract, λ₀::Real, nsim
     end
     return mean(payoffs), std(payoffs) / sqrt(nsim)
 end
+
+
+# Attempt to use vectorization instead of for-loop
+# function sim_price(model::MertonModel, option::OptionContract, λ₀::Real, nsim::Int)
+#     Random.seed!(42) # for reproducibility
+#     eps = randn(nsim)
+#     N = rand.(Poisson(λ₀ * model.T), nsim)
+#     payoffs = Vector{eltype(model.S*model.T*model.r*model.σ*model.λ*model.δ)}(undef, nsim)
+#     payoffs = exp.(- model.r * model.T) .* radon_nikodym(λ₀ * model.T, model.λ * model.T, N) .* option(model.S .* exp.((model.r - 0.5 .* model.σ^2) .* model.T .+ model.σ .* sqrt(model.T) .* eps) .* ifelse.(N.==0,1,rand.(LogNormal.( -0.5 * log(1+model.δ^2) .*N , log(1+model.δ^2) .* sqrt.(N)))))
+#     return mean(payoffs), std(payoffs) / sqrt(nsim)
+# end
+
+
 
 function exact_price_and_sensitivity()
     option = CallOption(100.0)
