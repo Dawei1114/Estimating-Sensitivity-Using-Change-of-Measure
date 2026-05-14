@@ -1,4 +1,4 @@
-using Pkg; Pkg.activate("Dawei"); using Revise
+using Pkg; Pkg.activate("Antithetic"); using Revise
 using Random, Distributions, ForwardDiff
 
 struct MertonModel{T,U,V,W,X,Y}
@@ -42,7 +42,7 @@ function price(model::MertonModel, option::OptionContract; tol = 1e-6)
     return sum_so_far
 end
 
-radon_nikodym(lambda0, lambda, N) = exp(lambda0 - lambda) * (lambda / lambda0)^N
+radon_nikodym(lambda0, lambda, N) = exp(lambda0 - lambda) * (lambda / lambda0) .^ N
 
 function test_RN(nsim::Int) # Check that the Radon-Nikodym derivative is correctly implemented by verifying that its mean is close to 1 under the original measure for various λ values. 
     Random.seed!(42) # for reproducibility
@@ -65,13 +65,32 @@ function sim_price(model::MertonModel, option::OptionContract, λ₀::Real, nsim
         if N[i] == 0
             payoffs[i] = exp(- model.r * model.T) * radon_nikodym(λ₀ * model.T, model.λ * model.T, N[i]) * option(model.S * exp((model.r - 0.5 * model.σ^2) * model.T + model.σ * sqrt(model.T) * eps[i]))
         else
-            # Yi = log.(randn(1,model.exp(model.δ^2)))
-            # Yi = rand(LogNormal(0, model.δ), N[i]) # Are you sure about this line? Try uncommenting the following:
             sig2 = log(1+model.δ^2)
             Yi = rand(LogNormal(-sig2/2, sqrt(sig2)), N[i])
-            # Y_test = rand(LogNormal(0, model.δ), 1_000_000); println("Empirical mean of Y: $(mean(Y_test)) ($(std(Y_test)/sqrt(1_000_000))). Theoretical mean of Y: 1. Empirical variance of Y: $(var(log.(Y_test))). Theoretical variance of log(Y): $(model.δ^2)."); error()
-            # Do you see how the empirical mean is too high? Note that you hav parametrized the lognormal distribution with a log-mean of 0, while the actual mean should be 1. Note that by Jensen's inequality, these are different things. If you want to allow for jumps with a different mean, you will need to make a few changes in the code, but I've deliberately removed everything related to that for now to keep things as simple as possible.
             payoffs[i] = exp(- model.r * model.T) * radon_nikodym(λ₀ * model.T, model.λ * model.T, N[i]) * option(model.S * exp((model.r - 0.5 * model.σ^2) * model.T + model.σ * sqrt(model.T) * eps[i]) * prod(Yi))
+        end
+    end
+    return mean(payoffs), std(payoffs) / sqrt(nsim)
+end
+
+
+function sim_price_antithetic(model::MertonModel, option::OptionContract, λ₀::Real, nsim::Int)
+    Random.seed!(42) # for reproducibility
+    eps = randn(nsim)
+    N = rand.(Poisson(λ₀ * model.T), nsim)
+    payoffs = Vector{eltype(model.S*model.T*model.r*model.σ*model.λ*model.δ)}(undef, nsim)
+    for i in eachindex(payoffs) # Can be partially (and even fully) vectorized, can you figure out how? Hint: what is the product of N independent lognormal random variables?
+        if N[i] == 0
+            payoff1 = exp(- model.r * model.T) * radon_nikodym(λ₀ * model.T, model.λ * model.T, N[i]) * option(model.S * exp((model.r - 0.5 * model.σ^2) * model.T + model.σ * sqrt(model.T) * eps[i]))
+            payoff2 = exp(- model.r * model.T) * radon_nikodym(λ₀ * model.T, model.λ * model.T, N[i]) * option(model.S * exp((model.r - 0.5 * model.σ^2) * model.T - model.σ * sqrt(model.T) * eps[i]))
+            payoffs[i] = (payoff1 + payoff2) / 2
+        else
+            sig2 = log(1+model.δ^2)
+            Yi1 = rand(LogNormal(-sig2/2, sqrt(sig2)), N[i])
+            Yi2 = rand(LogNormal(-sig2/2, sqrt(sig2)), N[i])
+            payoff1 = exp(- model.r * model.T) * radon_nikodym(λ₀ * model.T, model.λ * model.T, N[i]) * option(model.S * exp((model.r - 0.5 * model.σ^2) * model.T + model.σ * sqrt(model.T) * eps[i]) * prod(Yi1))
+            payoff2 = exp(- model.r * model.T) * radon_nikodym(λ₀ * model.T, model.λ * model.T, N[i]) * option(model.S * exp((model.r - 0.5 * model.σ^2) * model.T - model.σ * sqrt(model.T) * eps[i]) * prod(Yi2))
+            payoffs[i] = (payoff1 + payoff2) / 2
         end
     end
     return mean(payoffs), std(payoffs) / sqrt(nsim)
@@ -86,6 +105,8 @@ function exact_price_and_sensitivity()
     end
 end
 
+
+
 function simulated_price_and_sensitivity(nsim::Int)
     option = CallOption(100.0)
 
@@ -93,10 +114,24 @@ function simulated_price_and_sensitivity(nsim::Int)
     println("Simulated price and sensitivity for various λ values, using $nsim simulations:")
     for λ in 0.0:0.1:1.0
         m, se = pr(λ)
-        println("λ: $λ, Price: $(m) ($(se)), Sensitivity: $(ForwardDiff.derivative(x -> pr(x)[1], λ)), Second-order: $(ForwardDiff.derivative(x -> ForwardDiff.derivative(y -> pr(y)[1], x), λ))")
+        exact = price(MertonModel(100.0, 1.0, 0.05, 0.2, λ, 0.1), option)
+        println("λ: $λ, Price: $(m) ($(se)), MSE = $(mean((m .- exact).^2)), Sensitivity: $(ForwardDiff.derivative(x -> pr(x)[1], λ)), Second-order: $(ForwardDiff.derivative(x -> ForwardDiff.derivative(y -> pr(y)[1], x), λ))")
+    end
+end
+
+function simulated_price_and_sensitivity_antithetic(nsim::Int)
+    option = CallOption(100.0)
+
+    pr(λ) = sim_price_antithetic(MertonModel(100.0, 1.0, 0.05, 0.2, λ, 0.1), option, 0.5, nsim)
+    println("Simulated price and sensitivity with antithetic variates for various λ values, using $nsim simulations:")
+    for λ in 0.0:0.1:1.0
+        m, se = pr(λ)
+        exact = price(MertonModel(100.0, 1.0, 0.05, 0.2, λ, 0.1), option)
+        println("λ: $λ, Price: $(m) ($(se)), MSE = $(mean((m .- exact).^2)), Sensitivity: $(ForwardDiff.derivative(x -> pr(x)[1], λ)), Second-order: $(ForwardDiff.derivative(x -> ForwardDiff.derivative(y -> pr(y)[1], x), λ))")
     end
 end
 
 test_RN(1_000_000)
 exact_price_and_sensitivity()
 simulated_price_and_sensitivity(1_000_000)
+simulated_price_and_sensitivity_antithetic(1_000_000)

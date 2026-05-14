@@ -91,7 +91,7 @@ function exact_price_and_sensitivity()
     pr(λ) = price(MertonModel(100.0, 1.0, 0.05, 0.2, λ, 0.1), option)
     println("Exact price and sensitivity for various λ values:")
     for λ in 0.0:0.1:1.0
-        println("λ: $λ, Price: $(pr(λ)), Sensitivity: $(ForwardDiff.derivative(pr, λ))")
+        println("λ: $λ, Price: $(pr(λ)), Sensitivity: $(ForwardDiff.derivative(pr, λ)), Second-order: $(ForwardDiff.derivative(x -> ForwardDiff.derivative(pr, x), λ))")
     end
 end
 
@@ -102,10 +102,10 @@ function simulated_price_and_sensitivity(nsim::Int)
     println("Simulated price and sensitivity for various λ values, using $nsim simulations:")
     for λ in 0.0:0.1:1.0
         m, se = pr(λ)
-        println("λ: $λ, Price: $(m) ($(se)), Sensitivity: $(ForwardDiff.derivative(x -> pr(x)[1], λ))")
+        println("λ: $λ, Price: $(m) ($(se)), Sensitivity: $(ForwardDiff.derivative(x -> pr(x)[1], λ)), Second-order: $(ForwardDiff.derivative(x -> ForwardDiff.derivative(y -> pr(y)[1], x), λ))")
     end
 end
 
-test_RN(1_000_000)
+# test_RN(1_000_000)
 exact_price_and_sensitivity()
-simulated_price_and_sensitivity(1_000_000)
+# simulated_price_and_sensitivity(1_000_000)
