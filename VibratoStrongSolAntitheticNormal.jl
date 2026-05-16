@@ -55,7 +55,7 @@ function (basis::PolyBasis)(x::AbstractVector, y::AbstractVector)
 end
 basis_size(basis::PolyBasis) = sum(1 for i in 0:basis.degree for j in 0:basis.degree if i + j ≤ basis.degree)
 
-function laguerre(n, x)
+function laguerre(n::Int64, x::AbstractFloat)
     if n == 0
         return 1.0
     elseif n == 1
@@ -71,31 +71,31 @@ function laguerre(n, x)
     end
 end
 
-function (basisL::LaguerreBasis)(x::AbstractVector, y::AbstractVector)
-    m_out = Matrix{eltype(x[1]*y[1])}(undef, length(x), basis_sizeL(basisL))
+function (basis::LaguerreBasis)(x::AbstractVector, y::AbstractVector)
+    m_out = Matrix{eltype(x[1]*y[1])}(undef, length(x), basis_size(basis))
     c = 0
-    for i in 0:basisL.degree
-        for j in 0:basisL.degree
-            i + j ≤ basisL.degree || continue
+    for i in 0:basis.degree
+        for j in 0:basis.degree
+            i + j ≤ basis.degree || continue
             c += 1
-            m_out[:, c] .= exp.(-x - y) .* laguerre.(i, x) .* laguerre.(j, y)
+            m_out[:, c] .= exp.(-x) .* laguerre.(i, x) .+ exp(-y) .* laguerre.(j, y) .+ exp.(-x - y) .* laguerre.(i, x) .* laguerre.(j, y)
         end
     end
     return m_out
 end
-basis_sizeL(basis::LaguerreBasis) = sum(1 for i in 0:basis.degree for j in 0:basis.degree if i + j ≤ basis.degree)
+basis_size(basis::LaguerreBasis) = sum(1 for i in 0:basis.degree for j in 0:basis.degree if i + j ≤ basis.degree)
 
 
-function hermite(n, x)
+function hermite(n::Int64, x::AbstractVector)
     if n == 0
         return 1.0
     elseif n == 1
-        return  x
+        return x
     else
         Hₙ₋₂ = 1.0
         Hₙ₋₁ = x
         for k in 2:n
-            Hₙ = x .* Hₙ₋₁ - (k - 1) * Hₙ₋₂
+            Hₙ = x .* Hₙ₋₁ .- (k - 1) * Hₙ₋₂
             Hₙ₋₂, Hₙ₋₁ = Hₙ₋₁, Hₙ
         end
         return Hₙ₋₁
@@ -103,20 +103,20 @@ function hermite(n, x)
 end
 
 
-function(basisH::HermiteBasis)(x::AbstractVector, y::AbstractVector)
-    m_out = Matrix{eltype(x[1]*y[1])}(undef, length(x), basis_sizeH(basisH))
+function(basis::HermiteBasis)(x::AbstractVector, y::AbstractVector)
+    m_out = Matrix{eltype(x[1]*y[1])}(undef, length(x), basis_size(basis))
     c = 0
-    for i in 0:basisH.degree
-        for j in 0:basisH.degree
-            i + j ≤ basisH.degree || continue
+    for i in 0:basis.degree
+        for j in 0:basis.degree
+            i + j ≤ basis.degree || continue
             c += 1
-            m_out[:, c] .= exp.(-0.5 * (x.^2 + y.^2)) .* hermite.(i, x) .* hermite.(j, y)
+            m_out[:, c] .= exp.(-0.5 * (x.^2 + y.^2)) .* hermite(i, x) .* hermite(j, y)
         end
     end
     return m_out
 end
 
-basis_sizeH(basis::HermiteBasis) = sum(1 for i in 0:basis.degree for j in 0:basis.degree if i + j ≤ basis.degree)
+basis_size(basis::HermiteBasis) = sum(1 for i in 0:basis.degree for j in 0:basis.degree if i + j ≤ basis.degree)
 
 
 
@@ -133,10 +133,6 @@ basis_sizeH(basis::HermiteBasis) = sum(1 for i in 0:basis.degree for j in 0:basi
 #     return m_out
 # end
 
-
-function anti_copula(x::AbstractVector, y::AbstractVector, λ::Real)
-    return max.(0,cdf(Poisson(λ), floor.(x)) .+ cdf(Poisson(λ), floor.(y)) .- 1)
-end
 
 poisson_rand(λ::Real, N::Int) = rand(Poisson(λ), N)
 poisson_rand(λ::AbstractVector, ::Int) = rand.(Poisson.(λ))
@@ -162,26 +158,35 @@ function sim_T_and_T_Δ(::AntitheticVariates, model::MertonModel, λ₀::Real, n
     return S_T_Δ, S_T, λs
 end
 
+
+function k(model::MertonModel, X::AbstractVector, option::CallOption)
+    a = model.μ .* X
+    b = model.σ .* X
+    μₓ = X .+ a .* model.Δ
+    σₓ = b .* sqrt(model.Δ)
+    return (μₓ .- option.strike) .* (1 .- cdf.(Normal(), (option.strike .- μₓ) ./ σₓ)) .+ σₓ .* pdf.(Normal(), (option.strike .- μₓ) ./ σₓ)
+end
+
 function estimate_vibrato(vrt::AntitheticVariates, model::MertonModel, option::CallOption, λ₀::Real, nsims::Int, basis::VibratoBasis)
     Random.seed!(42) # for reproducibility
     
     S_T_Δ, S_T, λs = sim_T_and_T_Δ(vrt, model, λ₀, nsims)
 
     X1= basis(log.(S_T_Δ[1:nsims÷2] ./ model.S0), λs[1:nsims÷2]) # design matrix. Some normalization to avoid overflow for high-degree polynomials
-    y1 = exp(-model.μ * model.T) .* (option(S_T[1:nsims÷2])) # Adjust the payoffs by subtracting the expected payoff under the original measure, which is what the regression is trying to learn
+    y1 = exp(-model.μ * model.T) .* (option(S_T[1:nsims÷2]) .- k(model, S_T_Δ[1:nsims÷2], option)) # Adjust the payoffs by subtracting the expected payoff under the original measure, which is what the regression is trying to learn
     X2 = basis(log.(S_T_Δ[nsims÷2+1:nsims] ./ model.S0), λs[nsims÷2+1:nsims]) 
-    y2 = exp(-model.μ * model.T) .* (option(S_T[nsims÷2+1:nsims])) # Adjust the payoffs by subtracting the expected payoff under the original measure, which is what the regression is trying to learn
+    y2 = exp(-model.μ * model.T) .* (option(S_T[nsims÷2+1:nsims]) .- k(model, S_T_Δ[nsims÷2+1:nsims], option)) # Adjust the payoffs by subtracting the expected payoff under the original measure, which is what the regression is trying to learn
     return X1\y1, X2\y2 # Return the regression coefficients for both halves of the antithetic sample
 end
 
-function price_vibrato(::AntitheticVariates,model::MertonModel, λ₀::Real, nsims::Int, basis::VibratoBasis, β̂::Tuple{AbstractVector, AbstractVector})
+function price_vibrato(::AntitheticVariates,model::MertonModel, λ₀::Real, nsims::Int, basis::VibratoBasis, β̂::Tuple{AbstractVector, AbstractVector}, option::CallOption)
     Random.seed!(43) # for reproducibility
     Z = randn(nsims ÷ 2) # Standard normal random variables for the Brownian motion component
     Zfull = vcat(Z, -Z) # Antithetic variates for variance reduction
     S_T_Δ, Nvec = sim_T(model, Zfull, λ₀, nsims, model.S0, model.T - model.Δ) # Simulate prices at time T - Δ
     λ_vec = fill(model.λ, nsims) # Use the original λ₀ for pricing
-    ŷ1 = basis(log.(S_T_Δ[1:nsims÷2] ./ model.S0), λ_vec[1:nsims÷2]) * β̂[1] # Get the predicted payoff from the regression and add back the expected payoff under the original measure
-    ŷ2 = basis(log.(S_T_Δ[nsims÷2+1:nsims] ./ model.S0), λ_vec[nsims÷2+1:nsims]) * β̂[2] # Get the predicted payoff from the regression and add back the expected payoff under the original measure
+    ŷ1 = basis(log.(S_T_Δ[1:nsims÷2] ./ model.S0), λ_vec[1:nsims÷2]) * β̂[1] .+  exp(-model.μ * model.T) * k(model, S_T_Δ[1:nsims÷2], option) # Get the predicted payoff from the regression and add back the expected payoff under the original measure
+    ŷ2 = basis(log.(S_T_Δ[nsims÷2+1:nsims] ./ model.S0), λ_vec[nsims÷2+1:nsims]) * β̂[2] .+ exp(-model.μ * model.T) * k(model, S_T_Δ[nsims÷2+1:nsims], option) # Get the predicted payoff from the regression and add back the expected payoff under the original measure
     y_after_RN1 = ŷ1 .* radon_nikodym(λ₀ * (model.T - model.Δ), model.λ * (model.T - model.Δ), Nvec[1:nsims÷2]) # Adjust the predicted payoffs using the Radon-Nikodym derivative to account for the change in measure
     y_after_RN2 = ŷ2 .* radon_nikodym(λ₀ * (model.T - model.Δ), model.λ * (model.T - model.Δ), Nvec[nsims÷2+1:nsims]) # Adjust the predicted payoffs using the Radon-Nikodym derivative to account for the change in measure
     return mean(y_after_RN1 .+ y_after_RN2) / 2, std(y_after_RN1 .+ y_after_RN2) / (2 * sqrt(nsims)) # Return the estimated price and its standard error
@@ -199,8 +204,8 @@ function simulated_price_and_sensitivity_vibrato(::AntitheticVariates, nsim::Int
         mod = model(λ)
         vrt = AntitheticVariates()
         β̂1 , β̂2= estimate_vibrato(vrt, mod, option, λ₀, nsim_estimate, basis) 
-        m, se = price_vibrato(vrt, mod, λ₀, nsim, basis, (β̂1, β̂2))
-        println("λ: $λ, Price: $(m) ($(se)), Sensitivity: $(ForwardDiff.derivative(x -> price_vibrato(vrt, model(x), λ₀, nsim, basis, (β̂1, β̂2))[1], λ)), Second-order Sensitivity: $(ForwardDiff.derivative(x -> ForwardDiff.derivative(y -> price_vibrato(vrt, model(y), λ₀, nsim, basis, (β̂1, β̂2))[1], x), λ))")
+        m, se = price_vibrato(vrt, mod, λ₀, nsim, basis, (β̂1, β̂2), option)
+        println("λ: $λ, Price: $(m) ($(se)), Sensitivity: $(ForwardDiff.derivative(x -> price_vibrato(vrt, model(x), λ₀, nsim, basis, (β̂1, β̂2), option)[1], λ)), Second-order Sensitivity: $(ForwardDiff.derivative(x -> ForwardDiff.derivative(y -> price_vibrato(vrt, model(y), λ₀, nsim, basis, (β̂1, β̂2), option)[1], x), λ))")
         # S_final, rn = sim_T(mod, λ₀, nsim, mod.S0, mod.T)
         # S_rn_disc = exp.(-mod.μ * mod.T) .* option(S_final) .* radon_nikodym(λ₀ * mod.T, mod.λ * mod.T, rn) # Just a check for reference
         # println("- Direct price: $(mean(S_rn_disc)) ($(std(S_rn_disc) / sqrt(nsim)))")
